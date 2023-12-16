@@ -1,0 +1,36 @@
+version: '3.1'
+
+services:
+
+  test_service:
+    image: test_service:latest
+    environment:
+      POSTGRES_URL: "postgres://test_service:test@test_db:5432/test_service_db?sslmode=disable"
+    ports:
+    - 8080:8080
+    networks:
+    - test_network
+
+  test_db:
+    image: postgres:14-alpine3.18
+    restart: always
+    container_name: test_postgres
+    environment:
+      POSTGRES_PASSWORD: test
+      POSTGRES_USER: test_service
+      POSTGRES_DB: test_service_db
+    volumes:
+    - db:/var/lib/postgresql/data
+    - ./db/test_service_db/init.sql:/docker-entrypoint-initdb.d/create_tables.sql
+    ports:
+    - 5432:5432
+    networks:
+    - test_network
+
+networks:
+  test_network:
+    driver: bridge
+
+volumes:
+  db:
+    driver: local
