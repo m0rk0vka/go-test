@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	validator "github.com/go-playground/validator/v10"
@@ -40,6 +41,16 @@ type (
         Success bool   `json:"success"`
         Message string `json:"message"`
     }
+	
+	ListResponse struct {
+		Success bool `json:"success"`
+		News []NewsWithCategories `json:"news"`
+	}
+
+ 	EditResponse struct {
+		Success bool `json:"success"`
+		Message string `json:"message"`
+	}
 )
 
 var validate = validator.New()
@@ -79,10 +90,6 @@ func createConnection() *sql.DB {
 	return db
 }
 
-type ListResponse struct {
-	Success bool `json:"success"`
-	News []NewsWithCategories `json:"news"`
-}
 
 func GetNews(c *fiber.Ctx) error {
 	log.Println("Get news:")
@@ -91,8 +98,25 @@ func GetNews(c *fiber.Ctx) error {
 
 	logger := log.New(os.Stderr, "SQL: ", log.Flags())
 	db := reform.NewDB(sqlDB, postgresql.Dialect, reform.NewPrintfLogger(logger.Printf))
+	limitString := c.Query("limit", "1")
+	offsetString := c.Query("offset", "0")
+	limit, err := strconv.Atoi(limitString)
+	if err != nil {
+		return &fiber.Error{
+			Code: fiber.ErrBadRequest.Code,
+			Message: err.Error(),
+		}
+	}
+	offset, err := strconv.Atoi(offsetString)
+	if err != nil {
+		return &fiber.Error{
+			Code: fiber.ErrBadRequest.Code,
+			Message: err.Error(),
+		}
+	}
 
-	news, err := db.SelectAllFrom(NewsTable, "")
+	tail := fmt.Sprintf("ORDER BY id LIMIT %v OFFSET %v", limit, offset)
+	news, err := db.SelectAllFrom(NewsTable, tail)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
@@ -127,18 +151,16 @@ func GetNews(c *fiber.Ctx) error {
 	return c.JSON(lr)
 }
 
-type EditResponse struct {
-	Success bool `json:"success"`
-	Message string `json:"message"`
-}
+
 
 func UpdateNews(c *fiber.Ctx) error {
 	log.Println("Edit news by ID:")
 	var news NewsWithCategories
 	if err := json.Unmarshal([]byte(c.Body()), &news); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrBadRequest.Code,
+			Message: err.Error(),
+		}
 	}
 	//if err := c.BodyParser(news); err != nil {
 	//	c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
