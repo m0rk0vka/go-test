@@ -76,16 +76,19 @@ func (v XValidator) Validate(data interface{}) []ErrorResponse {
     return validationErrors
 }
 
-func createConnection() *sql.DB {
-	db, err := sql.Open("postgres", os.Getenv("POSTGRES_URL"))
+func createConnection() *reform.DB {
+	sqlDB, err := sql.Open("postgres", os.Getenv("POSTGRES_URL"))
 	if err != nil {
 		log.Fatalf("Unable to open connection to db.\n %v", err)
 	}	
 
-	err = db.Ping()
+	err = sqlDB.Ping()
 	if err != nil {
 		log.Fatalf("Unable to ping db.\n %v", err)
 	}
+
+	logger := log.New(os.Stderr, "SQL: ", log.Flags())
+	db := reform.NewDB(sqlDB, postgresql.Dialect, reform.NewPrintfLogger(logger.Printf))
 
 	return db
 }
@@ -93,11 +96,8 @@ func createConnection() *sql.DB {
 
 func GetNews(c *fiber.Ctx) error {
 	log.Println("Get news:")
-	sqlDB := createConnection()
-	defer sqlDB.Close()
+	db := createConnection()
 
-	logger := log.New(os.Stderr, "SQL: ", log.Flags())
-	db := reform.NewDB(sqlDB, postgresql.Dialect, reform.NewPrintfLogger(logger.Printf))
 	limitString := c.Query("limit", "1")
 	offsetString := c.Query("offset", "0")
 	limit, err := strconv.Atoi(limitString)
@@ -199,11 +199,7 @@ func UpdateNews(c *fiber.Ctx) error {
 		}
 	}
 	
-	sqlDB := createConnection()
-	defer sqlDB.Close()
-
-	logger := log.New(os.Stderr, "SQL: ", log.Flags())
-	db := reform.NewDB(sqlDB, postgresql.Dialect, reform.NewPrintfLogger(logger.Printf))
+	db := createConnection()
 
 	tx, err := db.Begin()
 	if err != nil {
