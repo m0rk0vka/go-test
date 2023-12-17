@@ -14,7 +14,7 @@ import (
 	reform "gopkg.in/reform.v1"
 	postgresql "gopkg.in/reform.v1/dialects/postgresql"
 
-	. "github.com/m0rk0vka/go-test/models"
+	"github.com/m0rk0vka/go-test/models"
 )
 
 
@@ -104,29 +104,36 @@ func GetNews(c *fiber.Ctx) error {
 	if err != nil {
 		return &fiber.Error{
 			Code: fiber.ErrBadRequest.Code,
-			Message: err.Error(),
+			Message: fmt.Sprintf(
+				"limit parameter %s is invalid, should be positive integer",
+				limitString,
+			),
 		}
 	}
 	offset, err := strconv.Atoi(offsetString)
 	if err != nil {
 		return &fiber.Error{
 			Code: fiber.ErrBadRequest.Code,
-			Message: err.Error(),
+			Message: fmt.Sprintf(
+				"offset parameter %s is invalid, should be positive integer",
+				offsetString,
+			),
 		}
 	}
 
 	tail := fmt.Sprintf("ORDER BY id LIMIT %v OFFSET %v", limit, offset)
-	news, err := db.SelectAllFrom(NewsTable, tail)
+	news, err := db.SelectAllFrom(models.NewsTable, tail)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrInternalServerError.Code,
+			Message: err.Error(),
+		}
 	}
 	
 	var newsWithCategories []NewsWithCategories
 	for _, n := range news {
 		log.Printf("For news %v:\n", n.Values()[0])
-		newsCategories, _ := db.FindAllFrom(CategoriesView, "news_id", n.Values()[0])
+		newsCategories, _ := db.FindAllFrom(models.CategoriesView, "news_id", n.Values()[0])
 		var categories []int
 		for _, nc := range newsCategories{
 			log.Printf("Category %v\n", nc.Values()[1])
@@ -200,25 +207,28 @@ func UpdateNews(c *fiber.Ctx) error {
 
 	tx, err := db.Begin()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrInternalServerError.Code,
+			Message: err.Error(),
+		}
 	}
 	defer func() {
 		_ = tx.Rollback()
 	}()
 
 	id := c.Params("Id")
-	existNews, err := tx.FindByPrimaryKeyFrom(NewsTable, id)
+	existNews, err := tx.FindByPrimaryKeyFrom(models.NewsTable, id)
 	if err == reform.ErrNoRows {
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
-			"error": fmt.Sprintf("No news with id: %v. %v", id, err.Error()),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrBadRequest.Code,
+			Message: fmt.Sprintf("No news with id: %v. %v", id, err.Error()),
+		}
 	}
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrInternalServerError.Code,
+			Message: err.Error(),
+		}
 	}
 
 	// if we left id from the body, we will create a new news
@@ -232,43 +242,47 @@ func UpdateNews(c *fiber.Ctx) error {
 		news.Content = existNews.Values()[2].(string)
 	}
 
-	newRecord := &News{
+	newRecord := &models.News{
 		Id: news.Id,
 		Title: news.Title,
 		Content: news.Content,
 	}
 	if err := tx.Save(newRecord); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrInternalServerError.Code,
+			Message: err.Error(),
+		}
 	}
 
 	if len(news.Categories) != 0 {
 		tail := fmt.Sprintf("WHERE news_id = %v", news.Id)
-		if _, err := tx.DeleteFrom(CategoriesView, tail); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": err.Error(),
-			})
+		if _, err := tx.DeleteFrom(models.CategoriesView, tail); err != nil {
+			return &fiber.Error{
+				Code: fiber.ErrInternalServerError.Code,
+				Message: err.Error(),
+			}
 		}
 		var categories = []reform.Struct{}
 		for _, c := range news.Categories {
-			categories = append(categories, &Categories{
+			categories = append(categories, &models.Categories{
 				NewsId: news.Id,
 				CategoryId: c,
 			})
 		}
 		log.Printf("Categories: %v\n", categories)
 		if err := tx.InsertMulti(categories...); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": err.Error(),
-			})
+			return &fiber.Error{
+				Code: fiber.ErrInternalServerError.Code,
+				Message: err.Error(),
+			}
 		}
 	}
 	
 	if err := tx.Commit(); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return &fiber.Error{
+			Code: fiber.ErrInternalServerError.Code,
+			Message: err.Error(),
+		}
 	}
 
 	res := EditResponse{
