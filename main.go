@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	_ "github.com/lib/pq"
 	"github.com/m0rk0vka/go-test/router"
 )
@@ -8,5 +10,5 @@ import (
 
 func main() {
 	app := router.Router()
-	app.Listen(":8080")
+	app.Listen(os.Getenv("addr"))
 }

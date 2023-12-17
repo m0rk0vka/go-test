@@ -6,6 +6,7 @@ services:
     image: test_service:latest
     environment:
       POSTGRES_URL: "postgres://test_service:test@test_db:5432/test_service_db?sslmode=disable"
+      addr: ":8080"
     ports:
     - 8080:8080
     networks:
