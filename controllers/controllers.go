@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/gofiber/fiber"
+	fiber "github.com/gofiber/fiber/v2"
 	reform "gopkg.in/reform.v1"
 	postgresql "gopkg.in/reform.v1/dialects/postgresql"
 
@@ -33,7 +33,7 @@ type ListResponse struct {
 	News []NewsWithCategories `json:"news"`
 }
 
-func GetNews(c *fiber.Ctx) {
+func GetNews(c *fiber.Ctx) error {
 	log.Println("Get news:")
 	sqlDB := createConnection()
 	defer sqlDB.Close()
@@ -43,10 +43,9 @@ func GetNews(c *fiber.Ctx) {
 
 	news, err := db.SelectAllFrom(NewsTable, "")
 	if err != nil {
-		c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-		return
 	}
 	
 	var newsWithCategories []NewsWithCategories
@@ -74,7 +73,7 @@ func GetNews(c *fiber.Ctx) {
 
 	log.Printf("listResponse: %v\n", lr)
 
-	c.JSON(lr)
+	return c.JSON(lr)
 }
 
 type EditResponse struct {
@@ -82,14 +81,13 @@ type EditResponse struct {
 	Message string `json:"message"`
 }
 
-func UpdateNews(c *fiber.Ctx) {
+func UpdateNews(c *fiber.Ctx) error {
 	log.Println("Edit news by ID:")
 	var news NewsWithCategories
 	if err := json.Unmarshal([]byte(c.Body()), &news); err != nil {
-		c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-		return
 	}
 	//if err := c.BodyParser(news); err != nil {
 	//	c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
@@ -107,10 +105,9 @@ func UpdateNews(c *fiber.Ctx) {
 
 	tx, err := db.Begin()
 	if err != nil {
-		c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-		return
 	}
 	defer func() {
 		_ = tx.Rollback()
@@ -119,16 +116,14 @@ func UpdateNews(c *fiber.Ctx) {
 	id := c.Params("Id")
 	existNews, err := tx.FindByPrimaryKeyFrom(NewsTable, id)
 	if err == reform.ErrNoRows {
-		c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"error": fmt.Sprintf("No news with id: %v. %v", id, err.Error()),
 		})
-		return
 	}
 	if err != nil {
-		c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-		return
 	}
 
 	// if we left id from the body, we will create a new news
@@ -148,19 +143,17 @@ func UpdateNews(c *fiber.Ctx) {
 		Content: news.Content,
 	}
 	if err := tx.Save(newRecord); err != nil {
-		c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-		return
 	}
 
 	if len(news.Categories) != 0 {
 		tail := fmt.Sprintf("WHERE news_id = %v", news.Id)
 		if _, err := tx.DeleteFrom(CategoriesView, tail); err != nil {
-			c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": err.Error(),
 			})
-			return
 		}
 		var categories = []reform.Struct{}
 		for _, c := range news.Categories {
@@ -171,23 +164,21 @@ func UpdateNews(c *fiber.Ctx) {
 		}
 		log.Printf("Categories: %v\n", categories)
 		if err := tx.InsertMulti(categories...); err != nil {
-			c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": err.Error(),
 			})
-			return
 		}
 	}
 	
 	if err := tx.Commit(); err != nil {
-		c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-		return	
 	}
 
 	res := EditResponse{
 		Success: true,
 		Message: "Successifully edit the news",
 	}
-	c.JSON(res)
+	return c.JSON(res)
 }
