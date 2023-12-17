@@ -24,7 +24,15 @@ func validateAPIKey(c *fiber.Ctx, key string) (bool, error) {
 }
 
 func Router() *fiber.App{
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+        // Global custom error handler
+        ErrorHandler: func(c *fiber.Ctx, err error) error {
+            return c.Status(fiber.StatusBadRequest).JSON(controllers.GlobalErrorHandlerResp{
+                Success: false,
+                Message: err.Error(),
+            })
+        },
+    })
 
 	app.Use("/edit", keyauth.New(keyauth.Config{
 		KeyLookup: "header:X-API-KEY",

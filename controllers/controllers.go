@@ -6,13 +6,64 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
+	validator "github.com/go-playground/validator/v10"
 	fiber "github.com/gofiber/fiber/v2"
 	reform "gopkg.in/reform.v1"
 	postgresql "gopkg.in/reform.v1/dialects/postgresql"
 
 	. "github.com/m0rk0vka/go-test/models"
 )
+
+
+type (
+	NewsWithCategories struct {
+		Id int `json:"id"`
+		Title string `json:"title" validate:"min=3,max=50"`
+		Content string `json:"content" validate:"min=5,max=500"`
+		Categories []int `json:"categories" validate:"unique"`
+	}
+
+	ErrorResponse struct {
+        Error       bool
+        FailedField string
+        Tag         string
+        Value       interface{}
+    }
+
+    XValidator struct {
+        validator *validator.Validate
+    }
+
+	GlobalErrorHandlerResp struct {
+        Success bool   `json:"success"`
+        Message string `json:"message"`
+    }
+)
+
+var validate = validator.New()
+
+func (v XValidator) Validate(data interface{}) []ErrorResponse {
+    validationErrors := []ErrorResponse{}
+
+    errs := validate.Struct(data)
+    if errs != nil {
+        for _, err := range errs.(validator.ValidationErrors) {
+            // In this case data object is actually holding the User struct
+            var elem ErrorResponse
+
+            elem.FailedField = err.Field() // Export struct field name
+            elem.Tag = err.Tag()           // Export struct tag
+            elem.Value = err.Value()       // Export field value
+            elem.Error = true
+
+            validationErrors = append(validationErrors, elem)
+        }
+    }
+
+    return validationErrors
+}
 
 func createConnection() *sql.DB {
 	db, err := sql.Open("postgres", os.Getenv("POSTGRES_URL"))
@@ -96,6 +147,28 @@ func UpdateNews(c *fiber.Ctx) error {
 	//	return
 	//}
 	log.Printf("Body: %v\n", news)
+
+	myValidator := &XValidator{
+        validator: validate,
+    }
+	// Validation
+	if errs := myValidator.Validate(news); len(errs) > 0 && errs[0].Error {
+		errMsgs := make([]string, 0)
+
+		for _, err := range errs {
+			errMsgs = append(errMsgs, fmt.Sprintf(
+				"[%s]: '%v' | Needs to implement '%s'",
+				err.FailedField,
+				err.Value,
+				err.Tag,
+			))
+		}
+
+		return &fiber.Error{
+			Code:    fiber.ErrBadRequest.Code,
+			Message: strings.Join(errMsgs, " and "),
+		}
+	}
 	
 	sqlDB := createConnection()
 	defer sqlDB.Close()
